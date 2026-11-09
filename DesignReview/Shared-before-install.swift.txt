@@ -1,0 +1,249 @@
+import SwiftUI
+import Foundation
+import WidgetKit
+
+struct Quota: Codable, Identifiable {
+    var label: String
+    var used: Double?
+    var reset: Double?
+    var duration: Double
+    var id: String { label }
+    func validUsage(at date: Date) -> Double? {
+        if let reset, reset <= date.timeIntervalSince1970 { return nil }
+        return used
+    }
+}
+struct ProviderUsage: Codable, Identifiable {
+    var id: String
+    var title: String
+    var observedAt: Double?
+    var stale: Bool
+    var message: String?
+    var windows: [Quota]
+    func isStale(at date: Date) -> Bool {
+        guard let observedAt else { return true }
+        return stale || date.timeIntervalSince1970 - observedAt >= 900
+    }
+    var accent: Color { id == "claude" ? Color(red: 0.86, green: 0.56, blue: 0.41) : Color(red: 0.48, green: 0.72, blue: 0.96) }
+}
+struct UsageSnapshot: Codable {
+    var version: Int
+    var generatedAt: Double
+    var groups: [ProviderUsage]
+    static var empty: UsageSnapshot {
+        .init(version: 1, generatedAt: Date().timeIntervalSince1970, groups: ["claude", "codex"].map {
+            .init(id: $0, title: $0.uppercased(), observedAt: nil, stale: true, message: "Waiting for usage", windows: [
+                .init(label: "5H", used: nil, reset: nil, duration: 18000),
+                .init(label: "7D", used: nil, reset: nil, duration: 604800)
+            ])
+        })
+    }
+}
+enum Bridge {
+    static func fetch(refresh: Bool = false) async throws -> UsageSnapshot {
+        let url = URL(string: "http://127.0.0.1:43871/" + (refresh ? "refresh" : "snapshot"))!
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: refresh ? 30 : 5)
+        if refresh { request.httpMethod = "POST" }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        let model = try JSONDecoder().decode(UsageSnapshot.self, from: data)
+        guard model.version == 1 else { throw URLError(.cannotParseResponse) }
+        UserDefaults.standard.set(data, forKey: "lastSnapshot")
+        return model
+    }
+    static var cached: UsageSnapshot {
+        guard let data = UserDefaults.standard.data(forKey: "lastSnapshot"), let model = try? JSONDecoder().decode(UsageSnapshot.self, from: data) else { return .empty }
+        return model
+    }
+}
+
+enum GaugeSize {
+    case small, medium, large
+    var diameter: CGFloat { self == .small ? 40 : self == .large ? 78 : 58 }
+    var lineWidth: CGFloat { self == .small ? 3.5 : self == .large ? 7 : 5 }
+    var valueFont: CGFloat { self == .small ? 11 : self == .large ? 22 : 15 }
+}
+
+enum ResetTime {
+    static func string(epoch: Double?, weekly: Bool, timeZone: TimeZone = .current) -> String {
+        guard let epoch, epoch.isFinite else { return "—" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.amSymbol = "am"
+        formatter.pmSymbol = "pm"
+        formatter.dateFormat = weekly ? "EEE h:mma" : "h:mma"
+        // Provider responses can jitter a fraction of a second around the
+        // reset boundary; normalize to seconds before formatting the minute.
+        return formatter.string(from: Date(timeIntervalSince1970: epoch.rounded()))
+    }
+}
+
+struct QuotaTrack: View {
+    let quota: Quota
+    let date: Date
+    let diameter: CGFloat
+    let thickness: CGFloat
+    let colors: [Color]
+    var marker = true
+    var accented = false
+    private var usage: Double? { quota.validUsage(at: date) }
+    var body: some View {
+        ZStack {
+            Circle().inset(by: thickness / 2)
+                .stroke(.primary.opacity(accented ? 0.18 : 0.09), lineWidth: thickness)
+            if let usage {
+                Circle().inset(by: thickness / 2)
+                    .trim(from: 0, to: min(1, max(0, usage / 100)))
+                    .stroke(LinearGradient(colors: accented ? [.white.opacity(0.75), .white] : colors, startPoint: .topLeading, endPoint: .bottomTrailing), style: StrokeStyle(lineWidth: thickness, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                if marker, let reset = quota.reset, quota.duration > 0 {
+                    let fraction = min(1, max(0, 1 - (reset - date.timeIntervalSince1970) / quota.duration))
+                    let start = max(0, min(0.975, fraction - 0.012))
+                    let end = min(1, start + 0.025)
+                    // Both strokes are narrower than the usage track and follow
+                    // its centreline, so the marker cannot protrude from the bar.
+                    Circle().inset(by: thickness / 2).trim(from: start, to: end)
+                        .stroke(Color.black.opacity(0.85), style: StrokeStyle(lineWidth: thickness - 0.5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Circle().inset(by: thickness / 2).trim(from: start, to: end)
+                        .stroke(accented ? Color.white : Color(red: 1, green: 0.24, blue: 0.34), style: StrokeStyle(lineWidth: max(1, thickness - 2.3), lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+            }
+        }.frame(width: diameter, height: diameter)
+    }
+}
+
+struct GaugeCell: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let quota: Quota
+    var secondary: Quota?
+    let provider: String
+    let date: Date
+    var size: GaugeSize = .medium
+    var accented = false
+    private var isClaude: Bool { provider == "claude" }
+    private var colors: [Color] {
+        isClaude
+            ? [Color(red: 0.93, green: 0.49, blue: 0.32), Color(red: 0.97, green: 0.63, blue: 0.38)]
+            : [Color(red: 0.36, green: 0.57, blue: 0.96), Color(red: 0.53, green: 0.77, blue: 1)]
+    }
+    private var innerColors: [Color] {
+        [Color(red: 0.97, green: 0.72, blue: 0.45), Color(red: 0.99, green: 0.83, blue: 0.62)]
+    }
+    private func value(_ quota: Quota) -> String {
+        quota.validUsage(at: date).map { "\(Int($0.rounded()))%" } ?? "—"
+    }
+    var body: some View {
+        VStack(spacing: size == .small ? 2 : 4) {
+            ZStack {
+                QuotaTrack(quota: quota, date: date, diameter: size.diameter, thickness: size.lineWidth, colors: colors, accented: accented)
+                if let secondary {
+                    QuotaTrack(quota: secondary, date: date, diameter: size.diameter - 2 * (size.lineWidth + 2), thickness: size == .small ? 3 : size.lineWidth - 1, colors: innerColors, marker: false, accented: accented)
+                        .widgetAccentable()
+                }
+                Text(value(quota))
+                    .font(.system(size: size.valueFont, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+            }.frame(width: size.diameter, height: size.diameter)
+            HStack(spacing: 3) {
+                Text(quota.label).foregroundStyle(.secondary)
+                if let secondary {
+                    Text("\(size == .small ? "F" : "Fable") \(value(secondary))")
+                        .foregroundStyle(accented ? Color.primary.opacity(0.75) : colorScheme == .light ? Color(red: 0.58, green: 0.26, blue: 0.09) : innerColors[0])
+                }
+            }.font(.system(size: size == .small ? 7 : size == .large ? 9 : 7.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
+            Text(quota.validUsage(at: date) != nil ? ResetTime.string(epoch: quota.reset, weekly: quota.duration >= 86400) : "—")
+                .font(.system(size: size == .small ? 7 : size == .large ? 10 : 8))
+                .foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+        }.frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(provider.capitalized) \(quota.label), \(value(quota)) used\(secondary.map { ", Fable weekly \(value($0)) used" } ?? "")")
+        .help("\(quota.label): \(value(quota)) used\(secondary.map { " · Fable: \(value($0)) used (inner track)" } ?? "")")
+    }
+}
+
+struct ProviderPanel: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let group: ProviderUsage
+    let date: Date
+    var size: GaugeSize = .medium
+    var accented = false
+    private var primary: Quota { group.windows.first ?? UsageSnapshot.empty.groups[0].windows[0] }
+    private var weekly: Quota { group.windows.dropFirst().first ?? UsageSnapshot.empty.groups[0].windows[1] }
+    private var fable: Quota? {
+        group.id == "claude" ? group.windows.first(where: { $0.label.uppercased() == "FABLE" }) : nil
+    }
+    private var logo: some View {
+        ProviderMark(provider: group.id)
+            .fill(group.id == "claude" && !accented ? group.accent : colorScheme == .dark ? Color.white.opacity(0.9) : Color.black.opacity(0.8))
+            .frame(width: size == .small ? 17 : size == .large ? 23 : 20, height: size == .small ? 17 : size == .large ? 23 : 20)
+            .accessibilityLabel(group.title)
+            .overlay(alignment: .topTrailing) {
+                if group.isStale(at: date) {
+                    Image(systemName: "clock.fill").font(.system(size: 6)).offset(x: 5, y: -3).foregroundStyle(.secondary)
+                }
+            }
+    }
+    private var cells: some View {
+        HStack(alignment: .top, spacing: size == .small ? 8 : size == .large ? 26 : 10) {
+            GaugeCell(quota: primary, provider: group.id, date: date, size: size, accented: accented)
+            GaugeCell(quota: weekly, secondary: fable, provider: group.id, date: date, size: size, accented: accented)
+        }
+    }
+    var body: some View {
+        Group {
+            if size == .small {
+                HStack(spacing: 7) { logo; cells }
+            } else {
+                VStack(spacing: size == .large ? 9 : 7) { logo; cells }
+            }
+        }.frame(maxWidth: .infinity)
+    }
+}
+
+struct SmallGaugeDashboard: View {
+    let snapshot: UsageSnapshot
+    var date = Date()
+    var offline = false
+    var accented = false
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(snapshot.groups) { group in ProviderPanel(group: group, date: date, size: .small, accented: accented) }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) {
+            if offline { Image(systemName: "wifi.slash").font(.system(size: 7)).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+struct GaugeDashboard: View {
+    let snapshot: UsageSnapshot
+    var date = Date()
+    var large = false
+    var offline = false
+    var accented = false
+    var body: some View {
+        Group {
+            if large {
+                VStack(spacing: 16) {
+                    ForEach(snapshot.groups) { group in ProviderPanel(group: group, date: date, size: .large, accented: accented) }
+                }
+            } else {
+                HStack(alignment: .center, spacing: 22) {
+                    ForEach(snapshot.groups) { group in ProviderPanel(group: group, date: date, accented: accented) }
+                }
+            }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) {
+            if offline { Image(systemName: "wifi.slash").font(.system(size: 9)).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+struct GaugeGlassSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24))
+    }
+}

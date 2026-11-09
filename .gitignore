@@ -1,0 +1,5 @@
+# Build output (recreate with python3 build.py)
+build/
+# Compiled design-study renderers
+DesignReview/render-*
+.DS_Store
