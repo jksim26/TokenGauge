@@ -39,6 +39,13 @@ struct GaugeTimeline: TimelineProvider {
         }
     }
 }
+/// Black in dark mode; the system's translucent material in light mode.
+struct WidgetSurface: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        if colorScheme == .dark { Color.black } else { Rectangle().fill(.ultraThinMaterial) }
+    }
+}
 struct GaugeWidgetView: View {
     let entry: GaugeEntry
     @Environment(\.widgetFamily) var family
@@ -51,7 +58,7 @@ struct GaugeWidgetView: View {
                 GaugeDashboard(snapshot: entry.snapshot, date: entry.date, large: family == .systemLarge, offline: entry.offline, accented: renderingMode == .accented)
             }
         }
-            .containerBackground(for: .widget) { Rectangle().fill(.ultraThinMaterial) }
+            .containerBackground(for: .widget) { WidgetSurface() }
             .widgetURL(URL(string: "tokengauge://open"))
     }
 }
@@ -63,6 +70,7 @@ struct TokenGaugeWidget: Widget {
             .configurationDisplayName("Token Gauge")
             .description("Claude, Codex and Grok usage windows, reset times and usage pace.")
             .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+            .contentMarginsDisabled() // the dashboards pad themselves so they can use the whole widget
             .containerBackgroundRemovable(true)
     }
 }

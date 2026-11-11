@@ -105,8 +105,8 @@ function render(snapshot, family, dark, now) {
   const fg = dark ? '#FFFFFF' : '#000000';
   const col = (hex, a = 1) => new Color(hex, a);
   // Solid track colour (14% foreground over the background) so overlapping round caps don't darken.
-  const track = col(mix(dark ? '#1C1C1E' : '#FFFFFF', fg, 0.14));
-  ctx.setFillColor(col(dark ? '#1C1C1E' : '#FFFFFF'));
+  const track = col(mix(dark ? '#000000' : '#FFFFFF', fg, 0.14));
+  ctx.setFillColor(col(dark ? '#000000' : '#FFFFFF'));
   ctx.fillRect(new Rect(0, 0, W, H));
   const text = (s, cx, cy, size, weight, color, width, k, ox, oy) => {
     ctx.setFont(weight === 'semibold' ? Font.semiboldSystemFont(size * k) : weight === 'regular' ? Font.systemFont(size * k) : Font.mediumSystemFont(size * k));
@@ -167,7 +167,7 @@ function render(snapshot, family, dark, now) {
     // Small clock badge: this provider's report is over 15 minutes old.
     ctx.setFillColor(col(fg, 0.55)); ctx.fillEllipse(new Rect(X(x - 3.2), Y(y - 3.2), 6.4 * k, 6.4 * k));
     const hand = new Path(); hand.addLines([new Point(X(x), Y(y - 2)), new Point(X(x), Y(y)), new Point(X(x + 1.6), Y(y + 0.9))]);
-    stroke(hand, 0.8, col(dark ? '#1C1C1E' : '#FFFFFF'));
+    stroke(hand, 0.8, col(dark ? '#000000' : '#FFFFFF'));
   };
   const cell = (c, provider, x, y, s, showReset) => {
     const q = c.quota, cx = x + s.d / 2, cy = y + s.d / 2, weekly = q.duration >= 86400;

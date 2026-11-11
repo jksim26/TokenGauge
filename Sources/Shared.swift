@@ -1,7 +1,9 @@
 import SwiftUI
 import Foundation
 import WidgetKit
+#if canImport(AppKit)
 import AppKit
+#endif
 
 struct Quota: Codable, Identifiable {
     var label: String
@@ -130,6 +132,8 @@ struct GaugeCell: View {
     var size: GaugeSize = .medium
     var accented = false
     var showReset = true
+    var resetGap: CGFloat?
+    var resetFont: CGFloat?
     private var innerWidth: CGFloat { size == .small ? 1.6 : size == .large ? 3 : 2.2 }
     private var colors: [Color] {
         let weekly = quota.duration >= 86400
@@ -152,7 +156,7 @@ struct GaugeCell: View {
         return result
     }
     var body: some View {
-        VStack(spacing: size == .small ? 7 : size == .large ? 15 : 13) {
+        VStack(spacing: resetGap ?? (size == .small ? 7 : size == .large ? 15 : 13)) {
             ZStack {
                 QuotaTrack(quota: quota, date: date, diameter: size.diameter, thickness: size.lineWidth, colors: colors, accented: accented)
                 if let secondary {
@@ -162,7 +166,9 @@ struct GaugeCell: View {
                     let fraction = min(1, max(0, 1 - (end - date.timeIntervalSince1970) / quota.duration))
                     let length = size.lineWidth + (secondary == nil ? 0 : 0.5 + innerWidth)
                     Capsule().fill(accented ? Color.white : gaugeColor(0xFF4558))
-                        .frame(width: size == .small ? 1.6 : 2, height: length)
+                        // Tinted and Lock Screen rendering is one colour: lengthen and outline the marker so it shows on the filled arc.
+                        .frame(width: size == .small ? 1.6 : 2, height: length + (accented ? 3 : 0))
+                        .overlay { if accented { Capsule().stroke(.black, lineWidth: 0.8) } }
                         .shadow(color: .black.opacity(0.55), radius: 0.6)
                         .offset(y: -(size.diameter - length) / 2)
                         .rotationEffect(.degrees(30 + fraction * 300))
@@ -182,7 +188,7 @@ struct GaugeCell: View {
             }.frame(width: size.diameter, height: size.diameter)
             if showReset {
                 Text(quota.validUsage(at: date) == nil ? "—" : reset(quota))
-                    .font(.system(size: size == .small ? 8.5 : size == .large ? 12 : 10.5, weight: .medium))
+                    .font(.system(size: resetFont ?? (size == .small ? 8.5 : size == .large ? 12 : 10.5), weight: .medium))
                     .foregroundStyle(.primary.opacity(0.9)).lineLimit(1).minimumScaleFactor(0.85)
             }
         }.frame(maxWidth: .infinity)
@@ -200,6 +206,12 @@ struct ProviderPanel: View {
     var accented = false
     var showReset = true
     var logoBeside = false
+    var gap: CGFloat?        // between the two gauges
+    var logoGap: CGFloat?    // between the logo and the gauges
+    var resetGap: CGFloat?   // between a gauge and its reset time
+    var logoSize: CGFloat?
+    var resetFont: CGFloat?
+    var resetBeside = false  // single-gauge providers: reset time fills the second gauge's place
     private var primary: Quota { group.windows.first ?? UsageSnapshot.empty.groups[0].windows[0] }
     private var weekly: Quota { group.windows.dropFirst().first ?? UsageSnapshot.empty.groups[0].windows[1] }
     private var fable: Quota? {
@@ -208,7 +220,7 @@ struct ProviderPanel: View {
     private var logo: some View {
         ProviderMark(provider: group.id)
             .fill(group.id == "claude" && !accented ? group.accent : colorScheme == .dark ? Color.white.opacity(0.9) : Color.black.opacity(0.8))
-            .frame(width: size == .small ? 16 : size == .large ? 22.4 : 19.2, height: size == .small ? 16 : size == .large ? 22.4 : 19.2)
+            .frame(width: logoSize ?? (size == .small ? 16 : size == .large ? 22.4 : 19.2), height: logoSize ?? (size == .small ? 16 : size == .large ? 22.4 : 19.2))
             .accessibilityLabel(group.title)
             .overlay(alignment: .topTrailing) {
                 if group.isStale(at: date) {
@@ -216,20 +228,28 @@ struct ProviderPanel: View {
                 }
             }
     }
+    private var besideActive: Bool { resetBeside && group.windows.count == 1 }
     private var cells: some View {
-        HStack(alignment: .top, spacing: size == .small ? 6 : size == .large ? 22 : 4) {
-            GaugeCell(quota: primary, provider: group.id, date: date, size: size, accented: accented, showReset: showReset)
+        HStack(alignment: resetBeside ? .center : .top, spacing: gap ?? (size == .small ? 6 : size == .large ? 22 : 4)) {
+            GaugeCell(quota: primary, provider: group.id, date: date, size: size, accented: accented, showReset: showReset && !besideActive, resetGap: resetGap, resetFont: resetFont)
             if group.windows.count != 1 {
-                GaugeCell(quota: weekly, secondary: fable, provider: group.id, date: date, size: size, accented: accented, showReset: showReset)
+                GaugeCell(quota: weekly, secondary: fable, provider: group.id, date: date, size: size, accented: accented, showReset: showReset, resetGap: resetGap, resetFont: resetFont)
+            } else if besideActive {
+                let parts = (primary.validUsage(at: date) == nil ? "—" : ResetTime.string(epoch: primary.reset, weekly: primary.duration >= 86400)).split(separator: " ", maxSplits: 1)
+                VStack(spacing: size == .large ? 3 : 1) {
+                    if parts.count > 1 { Text(parts[0].uppercased()).font(.system(size: size == .small ? 8.5 : size == .large ? 12 : 10, weight: .semibold)).foregroundStyle(.secondary) }
+                    Text(parts.last.map(String.init) ?? "—").font(.system(size: size == .small ? 10.5 : size == .large ? 17 : 13, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(.primary.opacity(0.9)).lineLimit(1).minimumScaleFactor(0.8)
+                }.frame(width: size.diameter).accessibilityHidden(true)
             }
         }
     }
     var body: some View {
         Group {
             if size == .small || logoBeside {
-                HStack(spacing: size == .small ? 5 : 10) { logo; cells }
+                HStack(spacing: logoGap ?? (size == .small ? 5 : 10)) { logo; cells }
             } else {
-                VStack(spacing: size == .large ? 8 : 5) { logo; cells }
+                VStack(spacing: logoGap ?? (size == .large ? 8 : 5)) { logo; cells }
             }
         }.frame(maxWidth: .infinity)
     }
@@ -244,34 +264,54 @@ private struct Hairline: View {
     }
 }
 
+/// Lays its content out at natural size and scales it to fill the space, so the same design fits every widget size.
+struct Fit<Content: View>: View {
+    let width: CGFloat
+    let height: CGFloat
+    var padding: CGFloat = 10
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        GeometryReader { geo in
+            let scale = min((geo.size.width - 2 * padding) / width, (geo.size.height - 2 * padding) / height)
+            content().fixedSize().scaleEffect(max(0.1, scale))
+                .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+}
+
+/// Three providers stacked as rows: Grok first, each row a logo and its gauges.
+private struct ProviderRows: View {
+    let snapshot: UsageSnapshot
+    let date: Date
+    let size: GaugeSize
+    let accented: Bool
+    var body: some View {
+        let groups = snapshot.groups.filter { $0.id == "grok" } + snapshot.groups.filter { $0.id != "grok" }
+        let large = size == .large
+        VStack(spacing: large ? 15 : 7) {
+            ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                if index > 0 { Hairline() }
+                ProviderPanel(group: group, date: date, size: size, accented: accented, showReset: large, logoBeside: true,
+                              gap: large ? 34 : 14, logoGap: large ? 20 : 9, resetGap: 6, resetBeside: true)
+            }
+        }
+    }
+}
+
 struct SmallGaugeDashboard: View {
     let snapshot: UsageSnapshot
     var date = Date()
     var offline = false
     var accented = false
+    var margin: CGFloat = 16 // the widget's content margins are disabled; the app passes 0
     var body: some View {
         if snapshot.groups.count > 2 { threeRows } else { twoRows }
     }
-    // Three providers: Grok on the left, Claude over Codex on the right; reset text is in the tooltip.
+    // Three providers: one row each, Grok first. Only Grok has room for its reset time; the rest are in the tooltip.
     private var threeRows: some View {
-        HStack(alignment: .center, spacing: 9) {
-            VStack(spacing: 6) {
-                ForEach(snapshot.groups.filter { $0.id == "grok" }) { group in
-                    ProviderPanel(group: group, date: date, size: .medium, accented: accented, showReset: false)
-                }
-            }
-            Hairline(vertical: true).frame(height: 96)
-            VStack(spacing: 7) {
-                let others = snapshot.groups.filter { $0.id != "grok" }
-                ForEach(Array(others.enumerated()), id: \.element.id) { index, group in
-                    if index > 0 { Hairline().frame(width: 110) }
-                    ProviderPanel(group: group, date: date, size: .small, accented: accented, showReset: false)
-                }
-            }
-        }.fixedSize().scaleEffect(0.7)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Fit(width: 137, height: 172) { ProviderRows(snapshot: snapshot, date: date, size: .small, accented: accented) }
         .overlay(alignment: .topTrailing) {
-            if offline { Image(systemName: "wifi.slash").font(.system(size: 7)).foregroundStyle(.secondary) }
+            if offline { Image(systemName: "wifi.slash").font(.system(size: 7)).foregroundStyle(.secondary).padding(8) }
         }
     }
     private var twoRows: some View {
@@ -279,6 +319,7 @@ struct SmallGaugeDashboard: View {
             ForEach(snapshot.groups) { group in ProviderPanel(group: group, date: date, size: .small, accented: accented) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { Rectangle().fill(.primary.opacity(0.14)).frame(height: 0.5).padding(.horizontal, 5).accessibilityHidden(true) }
+        .padding(margin)
         .overlay(alignment: .topTrailing) {
             if offline { Image(systemName: "wifi.slash").font(.system(size: 7)).foregroundStyle(.secondary) }
         }
@@ -291,40 +332,34 @@ struct GaugeDashboard: View {
     var large = false
     var offline = false
     var accented = false
+    var margin: CGFloat = 16 // the widget's content margins are disabled; the app passes 0
     var body: some View {
         if snapshot.groups.count > 2 { three } else { two }
     }
     private func panel(_ group: ProviderUsage) -> some View {
         ProviderPanel(group: group, date: date, accented: accented)
     }
-    // Three providers, Grok on the left. Medium: side by side, scaled to fit. Large: Grok, then Claude over Codex.
+    // Three providers. Medium: Grok on the left, Claude over Codex on the right. Large: one row each, Grok first.
     private var three: some View {
         let grok = snapshot.groups.filter { $0.id == "grok" }
         let others = snapshot.groups.filter { $0.id != "grok" }
-        let groups = grok + others
         return Group {
             if large {
-                HStack(alignment: .center, spacing: 14) {
-                    VStack { ForEach(grok) { panel($0) } }
-                    Hairline(vertical: true).frame(height: 200)
-                    VStack(spacing: 16) {
-                        ForEach(Array(others.enumerated()), id: \.element.id) { index, group in
-                            if index > 0 { Hairline() }
-                            ProviderPanel(group: group, date: date, accented: accented, logoBeside: true)
+                Fit(width: 256, height: 368) { ProviderRows(snapshot: snapshot, date: date, size: .large, accented: accented) }
+            } else {
+                // One row. Five gauges across make this width-bound, so the logos and reset times are enlarged to use the height.
+                Fit(width: 388, height: 122, padding: 8) {
+                    HStack(alignment: .center, spacing: 11) {
+                        ForEach(Array((grok + others).enumerated()), id: \.element.id) { index, group in
+                            if index > 0 { Hairline(vertical: true).frame(height: 104) }
+                            ProviderPanel(group: group, date: date, accented: accented, gap: 8, logoGap: 8, resetGap: 9, logoSize: 24, resetFont: 11)
                         }
                     }
-                }.fixedSize().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                HStack(alignment: .center, spacing: 12) {
-                    ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
-                        if index > 0 { Hairline(vertical: true).frame(height: 96) }
-                        panel(group)
-                    }
-                }.fixedSize().scaleEffect(0.8)
+                }
             }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
         .overlay(alignment: .topTrailing) {
-            if offline { Image(systemName: "wifi.slash").font(.system(size: 9)).foregroundStyle(.secondary) }
+            if offline { Image(systemName: "wifi.slash").font(.system(size: 9)).foregroundStyle(.secondary).padding(10) }
         }
     }
     private var two: some View {
@@ -346,6 +381,7 @@ struct GaugeDashboard: View {
                 Rectangle().fill(.primary.opacity(0.14)).frame(width: 0.5, height: 96).accessibilityHidden(true)
             }
         }
+        .padding(margin)
         .overlay(alignment: .topTrailing) {
             if offline { Image(systemName: "wifi.slash").font(.system(size: 9)).foregroundStyle(.secondary) }
         }

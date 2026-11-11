@@ -1,0 +1,23 @@
+You are a senior identity designer. Design a logo symbol and iOS app icon for "Token Gauge".
+
+BRIEF
+- Product: a Mac + iPhone widget that shows how much of your AI subscription limits you have used (Claude, Codex, Grok): rings showing percent used per 5-hour and 7-day window, a small red "pace" tick showing how far through the window you are, and reset times.
+- Audience: developers who glance at it many times a day.
+- Adjectives: precise, calm, instrument-like, glanceable, dark.
+- The product's own visual signature: a 300-degree ring that is OPEN AT THE TOP (a 60-degree gap centred at 12 o'clock), filled clockwise, with round caps, and a short radial tick marking pace. Dark surface #1C1C1E.
+- Off-limits cliches: speedometer needle, battery, plain closed progress ring, AI sparkles/stars, robots, chat bubbles, coins, and anything resembling the Claude, OpenAI, Grok, Apple Fitness rings or Activity logos. Do not use any provider logo.
+- The current icon is a plain green ring on dark teal: generic. Replace it with one clear, ownable idea.
+
+DELIVERABLES (write files in the current directory; do not touch anything outside it)
+Three clearly DIFFERENT concepts (different ideas, not variations), named a, b, c:
+1. a-symbol.svg, b-symbol.svg, c-symbol.svg: the symbol alone, viewBox="0 0 256 256", SOLID BLACK on transparent, no colour.
+2. a-icon.svg, b-icon.svg, c-icon.svg: the iOS app icon in colour, viewBox="0 0 1024 1024", a FULL-BLEED OPAQUE square background (no rounded corners, no transparency: iOS applies its own mask), symbol centred within the middle ~60% of the canvas.
+3. concepts.md: for each concept one line "Name: one-sentence idea", plus one honest risk each, and which you recommend.
+
+CONSTRUCTION RULES (strict)
+- Plain SVG paths/circles/rects only. No <text>, no fonts, no raster images, no filters, no masks, no clipPath, no gradients in the symbol files (icon files may use at most one subtle linear gradient).
+- Few anchors; use arcs (A commands) for circular geometry; exact angles (multiples of 15 degrees); consistent stroke widths; stroke-linecap round where strokes are used.
+- The idea must survive at 16 px: no detail smaller than 1/48 of the canvas, no hairlines, gaps at least 12 units on the 256 canvas.
+- At most 2 colours plus the background in the icon. Each idea must be explainable in one sentence.
+- Check your arc maths: compute endpoint coordinates explicitly from angles (x = cx + r*cos, y = cy + r*sin) and write them as numbers.
+When finished, list the files you wrote.

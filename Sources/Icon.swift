@@ -1,39 +1,52 @@
 import AppKit
 
+// Draws the Token Gauge mark ("Pace Gate": a gauge ring open at the top with the pace dash inside).
+// Usage: icon-maker <iconset dir> [<opaque 1024 px PNG for iOS>]
 @main
 struct IconMaker {
+    static let ink = CGColor(srgbRed: 0xE8 / 255.0, green: 0xE9 / 255.0, blue: 0xE4 / 255.0, alpha: 1)
+    static let pace = CGColor(srgbRed: 0xFF / 255.0, green: 0x66 / 255.0, blue: 0x5E / 255.0, alpha: 1)
+    static let surface = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
+
+    /// `tile` draws the rounded Mac tile on a clear canvas; otherwise the colour fills the square (iOS masks it).
+    static func png(size: Int, tile: Bool) -> Data {
+        let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: (tile ? CGImageAlphaInfo.premultipliedLast : .noneSkipLast).rawValue)!
+        context.scaleBy(x: CGFloat(size) / 1024, y: CGFloat(size) / 1024)
+        context.setFillColor(surface)
+        if tile {
+            context.addPath(CGPath(roundedRect: CGRect(x: 82, y: 82, width: 860, height: 860), cornerWidth: 192, cornerHeight: 192, transform: nil))
+            context.fillPath()
+        } else {
+            context.fill(CGRect(x: 0, y: 0, width: 1024, height: 1024))
+        }
+        // The mark is drawn on a 256 grid: ring radius 80, stroke 24, dash from 20 to 44 right of centre.
+        let unit: CGFloat = tile ? 2.7 : 3.2
+        let center = CGPoint(x: 512, y: 512)
+        context.setLineWidth(24 * unit)
+        context.setLineCap(.round)
+        context.addArc(center: center, radius: 80 * unit, startAngle: 120 * .pi / 180, endAngle: 60 * .pi / 180, clockwise: false)
+        context.setStrokeColor(ink)
+        context.strokePath()
+        context.move(to: CGPoint(x: center.x + 20 * unit, y: center.y))
+        context.addLine(to: CGPoint(x: center.x + 44 * unit, y: center.y))
+        context.setStrokeColor(pace)
+        context.strokePath()
+        guard let image = context.makeImage(), let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { fatalError("Icon rendering failed") }
+        return data
+    }
+
     static func main() throws {
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         for base in [16, 32, 128, 256, 512] {
             for scale in [1, 2] {
-                let size = base * scale
-                let image = NSImage(size: NSSize(width: size, height: size))
-                image.lockFocus()
-                let transform = NSAffineTransform()
-                transform.scale(by: CGFloat(size) / 1024); transform.concat()
-                let bounds = NSRect(x: 82, y: 82, width: 860, height: 860)
-                let tile = NSBezierPath(roundedRect: bounds, xRadius: 192, yRadius: 192)
-                NSGradient(starting: NSColor(red: 0.13, green: 0.23, blue: 0.27, alpha: 1), ending: NSColor(red: 0.055, green: 0.085, blue: 0.13, alpha: 1))!.draw(in: tile, angle: -65)
-                let center = NSPoint(x: 512, y: 505)
-                let track = NSBezierPath(ovalIn: NSRect(x: 247, y: 240, width: 530, height: 530))
-                track.lineWidth = 76
-                NSColor(white: 1, alpha: 0.13).setStroke(); track.stroke()
-                let arc = NSBezierPath()
-                arc.appendArc(withCenter: center, radius: 265, startAngle: 90, endAngle: -154, clockwise: true)
-                arc.lineWidth = 76; arc.lineCapStyle = .round
-                NSColor(red: 0.35, green: 0.87, blue: 0.65, alpha: 1).setStroke(); arc.stroke()
-                let tick = NSBezierPath()
-                let angle = CGFloat(-20) * .pi / 180
-                tick.move(to: NSPoint(x: center.x + cos(angle) * 223, y: center.y + sin(angle) * 223))
-                tick.line(to: NSPoint(x: center.x + cos(angle) * 307, y: center.y + sin(angle) * 307))
-                tick.lineWidth = 24; tick.lineCapStyle = .round
-                NSColor(red: 1, green: 0.40, blue: 0.40, alpha: 1).setStroke(); tick.stroke()
-                image.unlockFocus()
-                guard let data = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data), let png = bitmap.representation(using: .png, properties: [:]) else { fatalError("Icon rendering failed") }
-                let suffix = scale == 2 ? "@2x" : ""
-                try png.write(to: root.appendingPathComponent("icon_\(base)x\(base)\(suffix).png"))
+                try png(size: base * scale, tile: true).write(to: root.appendingPathComponent("icon_\(base)x\(base)\(scale == 2 ? "@2x" : "").png"))
             }
+        }
+        if CommandLine.arguments.count > 2 {
+            try png(size: 1024, tile: false).write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
         }
     }
 }

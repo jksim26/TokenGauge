@@ -31,7 +31,7 @@ struct ContentView: View {
                     Label(store.busy ? "Updating…" : "Refresh", systemImage: "arrow.clockwise")
                 }.disabled(store.busy)
             }
-            GaugeDashboard(snapshot: store.snapshot, offline: store.offline)
+            GaugeDashboard(snapshot: store.snapshot, offline: store.offline, margin: 0)
                 .padding(20).frame(height: 192)
                 .modifier(GaugeGlassSurface())
             VStack(alignment: .leading, spacing: 13) {

@@ -45,6 +45,27 @@ Close Token Gauge, remove the widget from Notification Centre, and double-click 
 
 Run python3 build.py to compile and ad-hoc sign both bundles. The macOS widget uses Foundation's _NSExtensionMain entry point while retaining Swift's widget entry metadata; using Swift's normal main as the process entry crashed ExtensionFoundation on this Mac. No Xcode project or developer portal login is needed. Run node --test Tests/bridge.test.cjs Tests/claude-desktop.test.cjs Tests/iphone.test.cjs for data handling, status-line pass-through and iPhone script checks.
 
+## iPhone app (native, no Mac needed once installed)
+
+Lock Screen: the app also adds one widget per provider (Claude usage, Codex usage, Grok usage). The Lock Screen row is four slots wide; a wide widget takes two slots and shows every window with its reset time, a round one takes one slot and shows the weekly window.
+
+Keeping it installed: with a free Apple ID the install expires after 7 days. `iOS/setup-renew.sh` installs a launchd job that runs `iOS/renew.sh` hourly; it re-signs and reinstalls once fewer than 4 days are left (so about every 3 days), as long as the Mac is awake and the iPhone is reachable and has been unlocked. Log: `~/Library/Logs/TokenGauge-renew.log`. Remove with `iOS/setup-renew.sh remove`.
+
+The `iOS/` folder is a native iPhone app with Home Screen widgets (small, medium, large). Unlike the Scriptable widget it signs in **on the phone** and fetches usage itself, so it works while the Mac is off. It is for local install only; it is not on the App Store.
+
+- **Claude:** sign in on claude.ai inside the app; the app keeps the session cookie (plus Claude's security cookies) and calls `claude.ai/api/organizations/{org}/usage`, the same endpoint the Mac helper uses.
+- **Codex:** "Sign in with ChatGPT" through the Codex CLI's public OAuth client in the system sign-in sheet. The redirect goes to a listener on `127.0.0.1:1455` inside the app. The phone gets its own tokens (renewed with its own refresh token) and calls `chatgpt.com/backend-api/wham/usage`. This is a separate sign-in from the Mac's Codex and does not disturb it.
+- **Grok:** sign in on cursor.com inside the app; the app keeps the `WorkosCursorSessionToken` cookie and calls `cursor.com/api/dashboard/get-sand-usage-status` for the weekly pool shared by Grok, Grok Bot and Cursor.
+
+Sign-ins are stored only in the iPhone Keychain (this device only, shared with the widget through the app's App Group) and sent only to the service they belong to. The widget fetches by itself on each timeline reload (requested every 15 minutes; iOS decides the real cadence), the app refreshes every three minutes while open, and a background refresh task runs when iOS allows. These are unofficial endpoints and sign-in flows that can change or break, and using another product's sign-in may be against that service's terms.
+
+**Build and install** (Xcode with an Apple ID signed in; `brew install xcodegen`):
+1. Copy `iOS/Local.xcconfig.example` to `iOS/Local.xcconfig`; set `BUNDLE_PREFIX` to something unique to you and `DEVELOPMENT_TEAM` to your team ID.
+2. Simulator: `cd iOS && xcodegen && open TokenGauge.xcodeproj`, then Run. Launching with the argument `-sampleData` shows example gauges without signing in (simulator only).
+3. iPhone: connect it, tap Trust, turn on Developer Mode, then run `iOS/install-to-phone.sh` (or press Run in Xcode with the phone selected). On first launch, trust the developer under Settings → General → VPN & Device Management.
+
+With a free Apple ID the install expires after 7 days; run `iOS/install-to-phone.sh` again to renew it (sign-ins and data are kept). Parsing checks run on the Mac: see `Tests/IOSParsing.swift`.
+
 ## iPhone (Scriptable)
 
 Requires the free Scriptable app on the iPhone, signed in to the same Apple ID with iCloud Drive turned on for Scriptable.

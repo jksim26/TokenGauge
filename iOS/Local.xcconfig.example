@@ -1,0 +1,4 @@
+// Copy to Local.xcconfig (not committed). BUNDLE_PREFIX must be unique to you.
+// DEVELOPMENT_TEAM is your Apple team ID (Xcode > Settings > Accounts), needed only for a real iPhone.
+BUNDLE_PREFIX = io.github.yourname
+DEVELOPMENT_TEAM =

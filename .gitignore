@@ -3,3 +3,8 @@ build/
 # Compiled design-study renderers
 DesignReview/render-*
 .DS_Store
+# iPhone app: generated project, build output and local signing settings
+iOS/TokenGauge.xcodeproj/
+iOS/build/
+iOS/Local.xcconfig
+iOS/dist/
